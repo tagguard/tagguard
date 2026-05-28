@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, use } from 'react'
+import { useEffect, useMemo, useRef, useState, use } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -25,10 +25,12 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
   const callChannelRef = useRef<any>(null)
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const chatId = token
 
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | undefined
+
     const init = async () => {
       const { data: tag } = await supabase
         .from('tags')
@@ -40,15 +42,15 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
       const { data: existing } = await supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at')
       setMessages(existing || [])
 
-      const channel = supabase.channel(`chat-${chatId}`)
+      channel = supabase.channel(`chat-${chatId}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` },
           (payload) => setMessages(prev => [...prev, payload.new as Message]))
         .subscribe()
-
-      return () => { supabase.removeChannel(channel) }
     }
+
     init()
-  }, [chatId])
+    return () => { if (channel) supabase.removeChannel(channel) }
+  }, [chatId, supabase])
 
   useEffect(() => {
     const callChannel = supabase.channel(`webrtc-${chatId}`, {
@@ -88,7 +90,7 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
     }
 
     return () => { supabase.removeChannel(callChannel) }
-  }, [chatId])
+  }, [chatId, supabase])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 

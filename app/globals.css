@@ -3,24 +3,23 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Landing page tokens */
+  --teal:    #00a9b7;
+  --teal2:   #63f1e6;
+  --navy:    #06101c;
+  --ink:     #07111f;
+  --muted:   #667385;
+  --lshadow: 0 28px 80px rgba(3,15,33,.12);
+  --lradius: 28px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

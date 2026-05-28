@@ -1,94 +1,139 @@
 'use client'
+
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import SupportWidget from './components/SupportWidget'
+import s from './landing.module.css'
 
-type ScanStatus = 'idle' | 'checking' | 'found' | 'unregistered' | 'error'
+/* ── QR Scanner icon ─────────────────────────── */
+function QrIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="10" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="1" y="10" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.6"/>
+      <rect x="10" y="10" width="2.2" height="2.2" fill="currentColor" rx=".4"/>
+      <rect x="13.8" y="10" width="2.2" height="2.2" fill="currentColor" rx=".4"/>
+      <rect x="10" y="13.8" width="2.2" height="2.2" fill="currentColor" rx=".4"/>
+      <rect x="13.8" y="13.8" width="2.2" height="2.2" fill="currentColor" rx=".4"/>
+    </svg>
+  )
+}
 
 export default function Home() {
-  const router = useRouter()
-  const supabase = createClient()
-  const [scanning, setScanning] = useState(false)
-  const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
-  const [statusMsg, setStatusMsg] = useState('')
+  const router  = useRouter()
+  const supabase = useMemo(() => createClient(), [])
 
-  const videoRef = useRef<HTMLVideoElement>(null)
+  /* ── Scanner state ───────────────────────────── */
+  const [scanning,   setScanning]   = useState(false)
+  const [scanError,  setScanError]  = useState('')
+  const [scanResult, setScanResult] = useState('')
+  const videoRef  = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const rafRef = useRef<number>(0)
-  const jsQRRef = useRef<any>(null)
+  const rafRef    = useRef<number>(0)
+  const jsQRRef   = useRef<any>(null)
 
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
+  /* ── Newsletter state ────────────────────────── */
+  const [nlEmail,   setNlEmail]   = useState('')
+  const [nlLoading, setNlLoading] = useState(false)
+  const [nlDone,    setNlDone]    = useState(false)
+  const [nlError,   setNlError]   = useState('')
+
+  const handleSubscribe = async () => {
+    const email = nlEmail.trim()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setNlError('Please enter a valid email address.')
+      return
     }
-    return () => { stopScan() }
+    setNlLoading(true); setNlError('')
+    await supabase.from('subscribers').insert({
+      email,
+      source:      'landing_page',
+      created_at:  new Date().toISOString(),
+    })
+    setNlLoading(false)
+    setNlDone(true)
+  }
+
+  /* ── Scroll reveal + parallax ────────────────── */
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll('[data-reveal]'))
+    const io = new IntersectionObserver(
+      entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add(s.show) }),
+      { threshold: 0.14, rootMargin: '0px 0px -60px 0px' }
+    )
+    els.forEach(el => io.observe(el))
+
+    const stage = document.querySelector('[data-stage]') as HTMLElement | null
+    const onScroll = () => {
+      if (stage) stage.style.transform = `translateY(${Math.min(window.scrollY * 0.03, 28)}px)`
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+
+    return () => { io.disconnect(); window.removeEventListener('scroll', onScroll) }
   }, [])
 
+  /* ── Scanner helpers ─────────────────────────── */
   const stopScan = () => {
     cancelAnimationFrame(rafRef.current)
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+    setScanError('')
+    setScanResult('')
     setScanning(false)
   }
 
-  const handleScanned = async (decoded: string) => {
-    stopScan()
-    setScanStatus('checking')
-    const match = decoded.match(/\/scan\/([a-f0-9-]{36})$/i)
-    const token = match ? match[1] : null
-    if (!token) {
-      setScanStatus('error')
-      setStatusMsg('This does not look like a TagGuard QR code.')
-      return
-    }
+  const handleScanned = async (raw: string) => {
+    const match = raw.match(/\/scan\/([A-Za-z0-9-]+)/)
+    const token = match ? match[1] : raw.trim()
+    setScanResult('Checking tag…')
+
+    /* Check if tag is registered */
     const { data } = await supabase
       .from('tags')
-      .select('id, active, owner_name, asset_name')
+      .select('id, active, owner_phone')
       .eq('scan_token', token)
-      .single()
-    if (!data) {
-      setScanStatus('error')
-      setStatusMsg('QR code not found in our system.')
-      return
-    }
-    if (data.active && data.owner_name) {
-      setScanStatus('found')
-      setStatusMsg('Tag found! Taking you there...')
-      setTimeout(() => router.push(`/scan/${token}`), 1200)
+      .maybeSingle()
+
+    stopScan()
+
+    if (data && data.owner_phone) {
+      /* Registered → go to finder/chat page */
+      router.push(`/scan/${token}`)
+    } else if (data) {
+      /* Tag exists but not registered yet */
+      router.push(`/register?token=${token}`)
     } else {
-      setScanStatus('unregistered')
-      setStatusMsg("Unregistered tag. Let's set it up!")
-      setTimeout(() => router.push(`/register?token=${token}`), 1200)
+      /* Unknown token → go to register */
+      router.push(`/register?token=${token}`)
     }
   }
 
   const scanFrame = () => {
-    const video = videoRef.current
+    const video  = videoRef.current
     const canvas = canvasRef.current
-    const jsQR = jsQRRef.current
+    const jsQR   = jsQRRef.current
     if (!video || !canvas || !jsQR) return
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth
+      canvas.width  = video.videoWidth
       canvas.height = video.videoHeight
       const ctx = canvas.getContext('2d')
       if (ctx) {
         ctx.drawImage(video, 0, 0)
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const img    = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const result = jsQR(img.data, img.width, img.height)
-        if (result) {
-          handleScanned(result.data)
-          return
-        }
+        if (result) { handleScanned(result.data); return }
       }
     }
     rafRef.current = requestAnimationFrame(scanFrame)
   }
 
-  const startScan = async () => {
-    setScanStatus('idle')
-    setStatusMsg('')
+  const openScanner = async () => {
+    setScanError('')
+    setScanResult('')
     setScanning(true)
     try {
       if (!jsQRRef.current) {
@@ -96,7 +141,7 @@ export default function Home() {
         jsQRRef.current = mod.default
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: 640, height: 480 }
+        video: { facingMode: { ideal: 'environment' }, width: 640, height: 640 }
       })
       streamRef.current = stream
       if (videoRef.current) {
@@ -105,104 +150,453 @@ export default function Home() {
         scanFrame()
       }
     } catch {
-      setScanning(false)
-      setScanStatus('error')
-      setStatusMsg('Camera access denied. Please allow camera permission.')
+      setScanError('Camera access denied. Please allow camera permission and try again.')
     }
   }
 
+  /* cleanup on unmount */
+  useEffect(() => () => stopScan(), [])
+
+  /* helper: reveal class + optional delay */
+  const r = (d?: 1 | 2 | 3) =>
+    [s.reveal, d === 1 ? s.d1 : d === 2 ? s.d2 : d === 3 ? s.d3 : ''].filter(Boolean).join(' ')
+
   return (
-    <main className="min-h-screen bg-white flex flex-col">
-      <nav className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-        <span className="font-semibold text-gray-900 text-lg">TagGuard</span>
-        <Link href="/dashboard" className="text-sm text-blue-600 font-medium">My Tags →</Link>
+    <div className={s.page}>
+
+      {/* ── Nav ──────────────────────────────────── */}
+      <nav className={s.nav}>
+        <Link href="/" className={s.brand}>
+          <span className={s.brandMark} aria-hidden="true" />
+          TagGuard
+        </Link>
+
+        <div className={s.navLinks}>
+          <Link href="#how">How it works</Link>
+          <Link href="#protect">What it protects</Link>
+          <Link href="#why">Why TagGuard</Link>
+          <Link href="#pricing">Pricing</Link>
+        </div>
+
+        <div className={s.navActions}>
+          <Link href="/auth" className={s.loginBtn}>Login</Link>
+          <button className={s.scanQrBtn} onClick={openScanner}>
+            <QrIcon />
+            Scan QR
+          </button>
+        </div>
       </nav>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center py-16">
-        <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-6">
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="2" width="12" height="12" rx="2" stroke="#185FA5" strokeWidth="2"/>
-            <rect x="18" y="2" width="12" height="12" rx="2" stroke="#185FA5" strokeWidth="2"/>
-            <rect x="2" y="18" width="12" height="12" rx="2" stroke="#185FA5" strokeWidth="2"/>
-            <rect x="18" y="18" width="4" height="4" fill="#185FA5"/>
-            <rect x="26" y="18" width="4" height="4" fill="#185FA5"/>
-            <rect x="18" y="26" width="4" height="4" fill="#185FA5"/>
-            <rect x="26" y="26" width="4" height="4" fill="#185FA5"/>
-          </svg>
-        </div>
-        <h1 className="text-3xl font-semibold text-gray-900 mb-3">Your lost item, found.</h1>
-        <p className="text-gray-500 text-lg mb-8 max-w-sm">Smart QR tags for everything you own. When someone finds it, they reach you instantly.</p>
-
-        <div className="flex flex-col gap-3 w-full max-w-xs">
-          <button
-            onClick={startScan}
-            className="bg-blue-600 text-white px-8 py-3 rounded-xl font-medium text-base hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <rect x="1" y="1" width="6" height="6" rx="1" stroke="white" strokeWidth="1.5"/>
-              <rect x="13" y="1" width="6" height="6" rx="1" stroke="white" strokeWidth="1.5"/>
-              <rect x="1" y="13" width="6" height="6" rx="1" stroke="white" strokeWidth="1.5"/>
-              <rect x="13" y="13" width="2" height="2" fill="white"/>
-              <rect x="17" y="13" width="2" height="2" fill="white"/>
-              <rect x="13" y="17" width="2" height="2" fill="white"/>
-              <rect x="17" y="17" width="2" height="2" fill="white"/>
-            </svg>
-            Scan QR code
-          </button>
-          <Link href="/register"
-            className="border border-gray-200 text-gray-700 px-8 py-3 rounded-xl font-medium text-base hover:bg-gray-50 transition-colors text-center">
-            Register a tag
-          </Link>
-        </div>
-        <p className="text-gray-400 text-sm mt-4">No app download needed for finders</p>
-      </div>
-
-      <div className="px-6 pb-12 grid grid-cols-3 gap-4 max-w-lg mx-auto w-full">
-        {[
-          { step: '1', title: 'Stick', desc: 'Attach tag to your item' },
-          { step: '2', title: 'Register', desc: 'Set up in 30 seconds' },
-          { step: '3', title: 'Relax', desc: 'Get notified if found' },
-        ].map(s => (
-          <div key={s.step} className="bg-gray-50 rounded-xl p-4 text-center">
-            <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-sm font-semibold mx-auto mb-2">{s.step}</div>
-            <div className="font-medium text-gray-900 text-sm">{s.title}</div>
-            <div className="text-gray-400 text-xs mt-1">{s.desc}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Scanner overlay */}
+      {/* ── QR Scanner overlay ───────────────────── */}
       {scanning && (
-        <div className="fixed inset-0 bg-black/70 flex flex-col items-center justify-center z-50 px-6">
-          <div className="relative bg-black rounded-2xl overflow-hidden w-full max-w-xs" style={{ minHeight: 320 }}>
-            <video ref={videoRef} className="w-full object-cover" style={{ minHeight: 320 }} muted playsInline />
-            <div className="absolute top-4 left-4 w-5 h-5 border-t-2 border-l-2 border-white" />
-            <div className="absolute top-4 right-4 w-5 h-5 border-t-2 border-r-2 border-white" />
-            <div className="absolute bottom-4 left-4 w-5 h-5 border-b-2 border-l-2 border-white" />
-            <div className="absolute bottom-4 right-4 w-5 h-5 border-b-2 border-r-2 border-white" />
+        <div className={s.scanOverlay}>
+          <div className={s.scanCard}>
+            <div className={s.scanHeader}>
+              <span className={s.scanTitle}>Scan a TagGuard QR code</span>
+              <button className={s.scanClose} onClick={stopScan} aria-label="Close scanner">×</button>
+            </div>
+
+            <div className={s.scanViewport}>
+              <video ref={videoRef} className={s.scanVideo} muted playsInline />
+              <div className={s.scanCorners} />
+              <div className={s.scanLine} />
+            </div>
+
+            {scanError  && <p className={s.scanError}>{scanError}</p>}
+            {scanResult && <p className={s.scanResult}>{scanResult}</p>}
+            {!scanError && !scanResult && (
+              <p className={s.scanHint}>Point your camera at the QR code on the tag</p>
+            )}
+
+            <canvas ref={canvasRef} className={s.scanCanvas} />
           </div>
-          <p className="text-white text-sm mt-4">Point camera at the QR sticker</p>
-          <button onClick={stopScan} className="mt-3 text-white/70 text-sm underline">Cancel</button>
-          <canvas ref={canvasRef} className="hidden" />
         </div>
       )}
 
-      {/* Scan result overlay */}
-      {!scanning && scanStatus !== 'idle' && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-6"
-          onClick={() => { if (scanStatus === 'error') setScanStatus('idle') }}
-        >
-          <div className={`rounded-2xl px-8 py-5 text-center text-sm font-medium min-w-[220px] ${
-            scanStatus === 'found' ? 'bg-green-500 text-white' :
-            scanStatus === 'unregistered' ? 'bg-amber-400 text-amber-900' :
-            scanStatus === 'checking' ? 'bg-white text-gray-700' :
-            'bg-red-500 text-white'
-          }`}>
-            {scanStatus === 'checking' ? 'Checking...' : statusMsg}
-            {scanStatus === 'error' && <p className="text-xs mt-1 opacity-75">Tap to dismiss</p>}
+      <main>
+
+        {/* ── Hero ─────────────────────────────────── */}
+        <section className={s.hero}>
+          <div>
+            <div className={`${s.eyebrow} ${r()}`} data-reveal>
+              Privacy-safe QR recovery tags
+            </div>
+
+            <h1 className={`${s.heroH1} ${r(1)}`} data-reveal>
+              Your things can{' '}
+              <span className={s.accent}>call you back.</span>
+            </h1>
+
+            <p className={`${s.heroCopy} ${r(2)}`} data-reveal>
+              TagGuard gives every important item a safe return link. When someone finds it,
+              they can message or call you privately — without seeing your phone number.
+            </p>
+
+            <div className={`${s.heroActions} ${r(3)}`} data-reveal>
+              <Link className={`${s.btn} ${s.teal}`} href="/register">
+                Get Started Free →
+              </Link>
+              <Link className={`${s.btn} ${s.ghost}`} href="#how">
+                See the story
+              </Link>
+            </div>
+
+            <div className={`${s.trustRow} ${r(3)}`} data-reveal>
+              <span className={s.avatars}>
+                {[0, 1, 2, 3].map(i => <span key={i} className={s.avatar} />)}
+              </span>
+              Built for bags, keys, pets, passports, certificates, and travel gear.
+            </div>
           </div>
-        </div>
-      )}
-    </main>
+
+          {/* product illustration */}
+          <div className={`${s.productStage} ${r(2)}`} data-reveal data-stage
+            aria-label="TagGuard product illustration">
+            <span className={s.glowOrb} />
+
+            <div className={s.passport}>
+              PASSPORT
+              <div className={s.globe} />
+            </div>
+
+            <div className={s.suitcase} />
+
+            <div className={`${s.tag} ${s.small}`}>
+              <div className={s.tagLogo}>TagGuard</div>
+              <div className={s.qr} />
+            </div>
+            <div className={`${s.tag} ${s.tagRound}`}>
+              <div className={s.tagLogo}>TagGuard</div>
+              <div className={s.qr} />
+            </div>
+            <div className={`${s.tag} ${s.tagCard}`}>
+              <div className={s.tagLogo}>TagGuard</div>
+              <div className={s.qr} />
+            </div>
+
+            <div className={s.phoneMock}>
+              <div className={s.phoneScreen}>
+                <div className={s.phoneNotch} />
+                <div className={s.chatTitle}>TagGuard</div>
+                <div className={s.secureDot}>● Secure connection</div>
+                <div className={s.bubble}>Hi, I found your bag near Gate 12.</div>
+                <div className={`${s.bubble} ${s.bubbleMe}`}>
+                  Thank you! Can we meet at the help desk?
+                </div>
+                <div className={s.bubble}>Yes, I'm here.</div>
+                <div className={s.callBtn}>Start private call</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Story / How it works ─────────────────── */}
+        <section className={s.story} id="how">
+          <div className={s.storyGrid}>
+            <div>
+              <div className={`${s.eyebrow} ${r()}`} data-reveal>The real problem</div>
+
+              <h2 className={`${s.sectionTitle} ${r(1)}`} data-reveal>
+                Lost isn't always gone. Sometimes it just needs a way home.
+              </h2>
+
+              <p className={`${s.sectionLead} ${s.storyLead} ${r(2)}`} data-reveal>
+                Trackers help you search. TagGuard helps good people return what they found —
+                instantly, privately, and without another app.
+              </p>
+
+              <div className={s.proofList}>
+                {[
+                  ['▢', 'No app.'],
+                  ['▥', 'No battery.'],
+                  ['◎', 'No personal number.'],
+                ].map(([icon, text], i) => (
+                  <div key={text} className={`${s.proof} ${r((i + 1) as 1 | 2 | 3)}`} data-reveal>
+                    <span className={s.proofIcon}>{icon}</span>
+                    {i === 2 ? <span className={s.accent}>{text}</span> : text}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className={`${s.cinemaPanel} ${r(2)}`} data-reveal>
+              <div className={s.airportSeat} />
+              <div className={s.terminalSign} />
+              <div className={s.seatLine}>
+                <div className={s.seat} /><div className={s.seat} /><div className={s.seat} />
+              </div>
+              <div className={s.leftBag} />
+              <div className={s.scanLight}>
+                <div className={s.qr} />
+                <small>SCAN TO RETURN</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Steps ────────────────────────────────── */}
+        <section className={s.steps}>
+          <div>
+            <div className={`${s.eyebrow} ${r()}`} data-reveal>Private connection</div>
+
+            <h2 className={`${s.sectionTitle} ${r(1)}`} data-reveal
+              style={{ color: 'var(--ink)' }}>
+              One scan. One safe page.<br />One chance to get it back.
+            </h2>
+
+            <p className={`${s.sectionLead} ${r(2)}`} data-reveal>
+              A finder scans the TagGuard QR. They see what you lost, your safe return message,
+              and two simple options: chat or private call.
+            </p>
+          </div>
+
+          <div className={s.phonePair}>
+            <div className={`${s.uiCard} ${r(1)}`} data-reveal>
+              <h3>Secure chat</h3>
+              <div className={s.miniBubble}>Hi! I found your passport holder.</div>
+              <div className={`${s.miniBubble} ${s.miniBubbleMe}`}>
+                Thank you. Are you still at the café?
+              </div>
+              <div className={s.miniBubble}>Yes. I can leave it with the manager.</div>
+            </div>
+
+            <div className={`${s.uiCard} ${r(2)}`} data-reveal>
+              <h3>Private call</h3>
+              <div className={s.callFace} />
+              <p style={{ textAlign: 'center', color: '#667385', marginTop: 0, fontSize: 14, lineHeight: 1.5 }}>
+                Connecting securely…<br />Your number is never shared.
+              </p>
+              <div className={s.hang}>⌕</div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Use cases ────────────────────────────── */}
+        <section className={s.usecases} id="protect">
+          <div className={s.center}>
+            <div className={`${s.eyebrow} ${r()}`} data-reveal style={{ justifyContent: 'center' }}>
+              What it protects
+            </div>
+            <h2 className={`${s.sectionTitle} ${r(1)}`} data-reveal style={{ color: 'var(--ink)' }}>
+              Make everyday things returnable.
+            </h2>
+            <p className={`${s.sectionLead} ${r(2)}`} data-reveal>
+              TagGuard is made for the things you carry, travel with, depend on, and cannot afford to lose.
+            </p>
+          </div>
+
+          <div className={s.caseGrid}>
+            {[
+              { e: '🧳', t: 'Luggage',      d: 'For airports, hotels, buses, and forgotten corners.' },
+              { e: '🐶', t: 'Pets',          d: 'Help kind people contact you when your pet wanders.' },
+              { e: '🛂', t: 'Passports',     d: 'A safer way back for travel documents and holders.' },
+              { e: '🔑', t: 'Keys',          d: 'Small tag. Big relief when they disappear.' },
+              { e: '🎒', t: 'Bags',          d: 'For backpacks, handbags, gym bags, and school bags.' },
+              { e: '📜', t: 'Certificates',  d: 'Protect documents that are hard to replace.' },
+              { e: '💻', t: 'Electronics',   d: 'For laptops, tablets, cameras, and headphones.' },
+              { e: '🚲', t: 'Vehicles',      d: 'Let people contact you without exposing your number.' },
+            ].map(({ e, t, d }, i) => (
+              <div key={t} className={`${s.caseCard} ${r(((i % 4) + 1) as 1|2|3|undefined)}`} data-reveal>
+                <span className={s.caseEmoji}>{e}</span>
+                <h3>{t}</h3>
+                <p>{d}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Compare ──────────────────────────────── */}
+        <section className={s.compare} id="why">
+          <div className={s.center}>
+            <div className={`${s.eyebrow} ${r()}`} data-reveal style={{ justifyContent: 'center' }}>
+              Why TagGuard
+            </div>
+            <h2 className={`${s.sectionTitle} ${r(1)}`} data-reveal>
+              More useful than a label.<br />Simpler than a tracker.
+            </h2>
+            <p className={`${s.sectionLead} ${s.storyLead} ${r(2)}`} data-reveal
+              style={{ marginLeft: 'auto', marginRight: 'auto' }}>
+              TagGuard creates a safe bridge between the finder and the owner — no spying, no tracking.
+            </p>
+          </div>
+
+          <div className={s.compareGrid}>
+            <div className={`${s.compareCard} ${s.best} ${r()}`} data-reveal>
+              <h3>TagGuard</h3>
+              <ul>
+                {[
+                  'Finder can chat or call privately',
+                  'Your phone number stays hidden',
+                  'No app required for the finder',
+                  'No battery or charging',
+                  'Affordable for many items',
+                ].map(f => <li key={f}><span className={s.check}>✓</span> {f}</li>)}
+              </ul>
+            </div>
+
+            <div className={`${s.compareCard} ${r(1)}`} data-reveal>
+              <h3>Paper labels</h3>
+              <ul>
+                {[
+                  'Exposes your phone number',
+                  'Easy to remove or damage',
+                  'No private communication',
+                  'Looks outdated',
+                  'Hard to update after printing',
+                ].map(f => <li key={f}><span className={s.xmark}>×</span> {f}</li>)}
+              </ul>
+            </div>
+
+            <div className={`${s.compareCard} ${r(2)}`} data-reveal>
+              <h3>Trackers</h3>
+              <ul>
+                {[
+                  'Needs battery or charging',
+                  'Works best inside an ecosystem',
+                  'Higher cost per item',
+                  'Finder may not know how to contact you',
+                  'Not ideal for every asset',
+                ].map(f => <li key={f}><span className={s.xmark}>×</span> {f}</li>)}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Pricing ──────────────────────────────── */}
+        <section className={s.pricing} id="pricing">
+          <div className={s.center}>
+            <div className={`${s.eyebrow} ${r()}`} data-reveal style={{ justifyContent: 'center' }}>
+              Early access
+            </div>
+            <h2 className={`${s.sectionTitle} ${r(1)}`} data-reveal style={{ color: 'var(--ink)' }}>
+              Start small. Protect more.
+            </h2>
+            <p className={`${s.sectionLead} ${r(2)}`} data-reveal
+              style={{ marginLeft: 'auto', marginRight: 'auto' }}>
+              Launch-friendly packs for Kickstarter, pre-orders, or MVP testing.
+            </p>
+          </div>
+
+          <div className={s.priceRow}>
+            {([
+              {
+                name: 'Starter',  sub: 'For one essential item.',    price: '$19', tag: 'early',
+                features: ['1 premium QR tag', 'Secure scan page', 'Basic chat'],
+                popular: false, delay: undefined,
+              },
+              {
+                name: 'Traveler', sub: 'For bags and documents.',     price: '$49', tag: 'early',
+                features: ['3 premium QR tags', 'Chat + private call', 'Travel-ready profile'],
+                popular: true, delay: 1 as const,
+              },
+              {
+                name: 'Family',   sub: "For everyone's essentials.", price: '$79', tag: 'early',
+                features: ['5 premium QR tags', 'Shared family dashboard', 'Priority launch access'],
+                popular: false, delay: 2 as const,
+              },
+            ] as const).map(({ name, sub, price, tag, features, popular, delay }) => (
+              <div key={name}
+                className={`${s.priceCard}${popular ? ' ' + s.popular : ''} ${r(delay)}`}
+                data-reveal>
+                {popular && <div className={s.badge}>Most popular</div>}
+                <h3>{name}</h3>
+                <p className={s.priceSub}>{sub}</p>
+                <div className={s.priceAmt}>{price} <small>{tag}</small></div>
+                <ul>
+                  {features.map(f => (
+                    <li key={f}><span className={s.check}>✓</span> {f}</li>
+                  ))}
+                </ul>
+                <Link href="/register" className={`${s.btn} ${s.teal}`}
+                  style={{ width: '100%', marginTop: 8 }}>
+                  Choose {name}
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Newsletter ───────────────────────────── */}
+        <section className={s.newsletter}>
+          <div className={`${s.nlPill} ${r()}`} data-reveal>
+            🔔 Early access
+          </div>
+
+          <h2 className={`${s.nlTitle} ${r(1)}`} data-reveal>
+            Be the first to know<br />when we launch.
+          </h2>
+
+          <p className={`${s.nlSub} ${r(2)}`} data-reveal>
+            Early subscribers get <strong style={{ color: '#63f1e6' }}>30% off</strong> their first
+            order — plus priority access to new tag designs before anyone else.
+          </p>
+
+          <div className={`${r(3)}`} data-reveal>
+            {nlDone ? (
+              <p className={s.nlDone}>
+                ✓ You're on the list! We'll notify you at launch.
+              </p>
+            ) : (
+              <div className={s.nlForm}>
+                <input
+                  className={s.nlInput}
+                  type="email"
+                  placeholder="your@email.com"
+                  value={nlEmail}
+                  onChange={e => { setNlEmail(e.target.value); setNlError('') }}
+                  onKeyDown={e => e.key === 'Enter' && handleSubscribe()}
+                />
+                <button className={s.nlBtn} onClick={handleSubscribe} disabled={nlLoading}>
+                  {nlLoading ? 'Joining…' : 'Notify me →'}
+                </button>
+              </div>
+            )}
+            {nlError && (
+              <p style={{ color: '#fca5a5', fontSize: 13, marginTop: 8 }}>{nlError}</p>
+            )}
+            {!nlDone && (
+              <div className={s.nlMeta}>
+                <span>✓ No spam, ever</span>
+                <span>✓ Unsubscribe anytime</span>
+                <span>✓ Launching soon</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Final CTA ────────────────────────────── */}
+        <section className={s.final}>
+          <div className={s.floatingTags} aria-hidden="true">
+            <span className={s.float} />
+            <span className={s.float} />
+            <span className={s.float} />
+          </div>
+
+          <div className={r()} data-reveal>
+            <h2>Don't wait until it's gone.</h2>
+            <p>
+              TagGuard helps honest finders do the right thing —
+              while keeping your private details protected.
+            </p>
+            <Link href="/register" className={`${s.btn} ${s.teal}`}>
+              Get Started Free →
+            </Link>
+          </div>
+        </section>
+
+      </main>
+
+      {/* ── Footer bar ───────────────────────────── */}
+      <footer className={s.footerBar}>
+        <span className={s.footerCopy}>
+          © {new Date().getFullYear()} TagGuard · tagguard.in · All rights reserved
+        </span>
+        <SupportWidget
+          label="Message customer care"
+          variant="inline"
+          context="landing_footer"
+        />
+      </footer>
+    </div>
   )
 }

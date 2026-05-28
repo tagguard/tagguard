@@ -1,15 +1,24 @@
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import type { Metadata, Viewport } from 'next'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+const font = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'TagGuard — Smart QR Asset Tracking',
   description: 'Protect your valuables with smart QR tags',
   manifest: '/manifest.json',
+}
+
+export const viewport: Viewport = {
   themeColor: '#185FA5',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -21,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="TagGuard" />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={font.className} suppressHydrationWarning>{children}</body>
     </html>
   )
 }

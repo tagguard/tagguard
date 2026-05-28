@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect, Suspense } from 'react'
+import { useState, useRef, useEffect, useMemo, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useSearchParams } from 'next/navigation'
@@ -8,7 +8,7 @@ function RegisterForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const tokenFromScan = searchParams.get('token')
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [scanning, setScanning] = useState(false)

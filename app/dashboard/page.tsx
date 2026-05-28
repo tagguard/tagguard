@@ -1,127 +1,432 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase'
+
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
+import SupportWidget from '@/app/components/SupportWidget'
+import s from './dashboard.module.css'
+import type { User } from '@supabase/supabase-js'
 
-type Tag = { id: string; asset_name: string; asset_type: string; active: boolean; created_at: string; scan_token: string }
+/* ── Types ─────────────────────────────────────── */
+type Tag = {
+  id: string
+  asset_name: string
+  asset_type: string
+  active: boolean
+  created_at: string
+  scan_token: string
+  owner_name: string
+  owner_phone: string
+}
 
+/* ── Helpers ───────────────────────────────────── */
+const ASSET_EMOJI: Record<string, string> = {
+  Bag: '🎒', Wallet: '👛', Keys: '🔑', Passport: '🛂',
+  Certificate: '📜', Laptop: '💻', 'Pet collar': '🐾',
+  Luggage: '🧳', Pets: '🐶', Electronics: '💻',
+  Vehicles: '🚲', Other: '🏷️',
+}
+function assetEmoji(type: string) { return ASSET_EMOJI[type] ?? '🏷️' }
+
+function providerLabel(user: User) {
+  const p = user.app_metadata?.provider ?? ''
+  if (p === 'google')   return 'Google'
+  if (p === 'facebook') return 'Facebook'
+  if (p === 'twitter')  return 'X (Twitter)'
+  return 'Social'
+}
+
+function monthYear(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
+
+function initials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function greet() {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
+
+/* ── Icons ─────────────────────────────────────── */
+function CopyIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+      <path d="M9.5 4.5V2.5a1 1 0 00-1-1h-6a1 1 0 00-1 1v6a1 1 0 001 1h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M2 7l4 4 6-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function ChatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M12 1H2a1 1 0 00-1 1v7a1 1 0 001 1h3.5L7 12l1.5-2H12a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+/* ── Component ─────────────────────────────────── */
 export default function Dashboard() {
-  const [tags, setTags] = useState<Tag[]>([])
-  const [loading, setLoading] = useState(true)
-  const [phone, setPhone] = useState('')
-  const [hasPhone, setHasPhone] = useState(false)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const supabase = createClient()
+  const router  = useRouter()
+  const supabase = useMemo(() => createClient(), [])
 
+  const [user,        setUser]        = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  const [tags,        setTags]        = useState<Tag[]>([])
+  const [scanCounts,  setScanCounts]  = useState<Record<string, number>>({})
+  const [tagsLoading, setTagsLoading] = useState(false)
+
+  const [phone,       setPhone]       = useState('')
+  const [linkedPhone, setLinkedPhone] = useState<string | null>(null)
+  const [linking,     setLinking]     = useState(false)
+
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
+  const [toast,       setToast]       = useState('')
+
+  /* ── Load tags by phone ──────────────────────── */
   const loadTags = async (ownerPhone: string) => {
-    const { data } = await supabase
+    setTagsLoading(true)
+    const { data: tagRows } = await supabase
       .from('tags')
-      .select('id, asset_name, asset_type, active, created_at, scan_token')
+      .select('id, asset_name, asset_type, active, created_at, scan_token, owner_name, owner_phone')
       .eq('owner_phone', ownerPhone)
       .order('created_at', { ascending: false })
-    setTags(data || [])
-    setLoading(false)
+
+    const rows: Tag[] = tagRows ?? []
+    setTags(rows)
+
+    /* fetch scan counts */
+    if (rows.length > 0) {
+      const tokens = rows.map(t => t.scan_token).filter(Boolean)
+      const { data: events } = await supabase
+        .from('scan_events')
+        .select('scan_token')
+        .in('scan_token', tokens)
+
+      const counts: Record<string, number> = {}
+      events?.forEach(e => {
+        counts[e.scan_token] = (counts[e.scan_token] ?? 0) + 1
+      })
+      setScanCounts(counts)
+    }
+
+    setTagsLoading(false)
   }
 
+  /* ── Auth check on mount ─────────────────────── */
   useEffect(() => {
-    const saved = localStorage.getItem('tg_phone')
-    localStorage.setItem('tg_role', 'owner')
-    if (saved) {
-      setPhone(saved)
-      setHasPhone(true)
-      loadTags(saved)
-    } else {
-      setLoading(false)
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { router.replace('/auth'); return }
+      setUser(session.user)
+      setAuthLoading(false)
+      const saved = localStorage.getItem('tg_phone')
+      if (saved) { setLinkedPhone(saved); loadTags(saved) }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_ev, session) => {
+      if (!session) router.replace('/auth')
+    })
+    return () => subscription.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handlePhoneLogin = () => {
-    if (!phone.trim()) return
-    localStorage.setItem('tg_phone', phone.trim())
-    localStorage.setItem('tg_role', 'owner')
-    setHasPhone(true)
-    loadTags(phone.trim())
+  /* ── Handlers ────────────────────────────────── */
+  const handleLinkPhone = async () => {
+    const trimmed = phone.trim()
+    if (!trimmed) return
+    setLinking(true)
+    localStorage.setItem('tg_phone', trimmed)
+    setLinkedPhone(trimmed)
+    setPhone('')
+    await loadTags(trimmed)
+    setLinking(false)
   }
 
-  const handleCopy = (tagId: string, scanToken: string) => {
-    const url = `${window.location.origin}/scan/${scanToken}`
-    navigator.clipboard.writeText(url)
-    setCopiedId(tagId)
-    setTimeout(() => setCopiedId(null), 2000)
+  const handleCopy = (token: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/scan/${token}`)
+    setCopiedToken(token)
+    setToast('Scan link copied!')
+    setTimeout(() => { setCopiedToken(null); setToast('') }, 2200)
   }
 
-  if (loading) return (
-    <main className="min-h-screen bg-white flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </main>
-  )
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    localStorage.removeItem('tg_phone')
+    router.replace('/auth')
+  }
 
-  if (!hasPhone) return (
-    <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6">
-      <div className="bg-white rounded-2xl p-8 w-full max-w-sm border border-gray-100">
-        <h2 className="text-xl font-semibold text-gray-900 mb-1">Your tags</h2>
-        <p className="text-gray-500 text-sm mb-6">Enter the phone number you registered with</p>
-        <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-          placeholder="+91 98765 43210"
-          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 bg-white mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <button onClick={handlePhoneLogin} className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium">View my tags</button>
+  /* ── Loading state ───────────────────────────── */
+  if (authLoading) {
+    return (
+      <div className={s.center}>
+        <div className={s.spinner} />
       </div>
-    </main>
-  )
+    )
+  }
+  if (!user) return null
 
+  /* ── Derived values ──────────────────────────── */
+  const meta        = user.user_metadata ?? {}
+  const displayName = meta.full_name ?? meta.name ?? user.email?.split('@')[0] ?? 'User'
+  const avatarUrl   = meta.avatar_url ?? meta.picture ?? null
+  const firstName   = displayName.split(' ')[0]
+  const userInitials = initials(displayName)
+  const prov        = providerLabel(user)
+  const since       = monthYear(user.created_at)
+  const activeTags  = tags.filter(t => t.active).length
+  const totalScans  = Object.values(scanCounts).reduce((a, b) => a + b, 0)
+
+  /* ── Render ──────────────────────────────────── */
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center">
-        <span className="font-semibold text-gray-900">My Tags</span>
-        <Link href="/register" className="text-blue-600 text-sm font-medium">+ Add tag</Link>
-      </div>
+    <div className={s.page}>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-3">
-        {tags.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-gray-400 mb-4">No tags registered yet</p>
-            <Link href="/register" className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium">Register your first tag</Link>
+      {/* ── Topbar ──────────────────────────────── */}
+      <header className={s.topbar}>
+        <Link href="/" className={s.brand}>
+          <span className={s.brandMark} aria-hidden="true" />
+          TagGuard
+        </Link>
+
+        <div className={s.userRow}>
+          <span className={s.userName}>{displayName}</span>
+          {avatarUrl
+            ? <img src={avatarUrl} alt={displayName} className={s.avatarImg} referrerPolicy="no-referrer" />
+            : <div className={s.avatarFallback}>{userInitials}</div>}
+          <button className={s.logoutBtn} onClick={handleLogout}>Sign out</button>
+        </div>
+      </header>
+
+      {/* ── Content ─────────────────────────────── */}
+      <div className={s.content}>
+        <p className={s.greeting}>{greet()}, {firstName} 👋</p>
+        <p className={s.greetSub}>Here's everything about your tags and items.</p>
+
+        {/* Stats row */}
+        <div className={s.stats}>
+          <div className={s.stat}>
+            <div className={s.statNum}>{tags.length}</div>
+            <div className={s.statLabel}>Total Tags</div>
           </div>
-        )}
-        {tags.map(t => (
-          <div key={t.id} className="bg-white rounded-2xl border border-gray-100 p-4">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <p className="font-semibold text-gray-900">{t.asset_name}</p>
-                <p className="text-gray-400 text-sm">{t.asset_type} · Tag ID: <span className="font-mono">{t.id}</span></p>
-              </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${t.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                {t.active ? 'Active' : 'Inactive'}
-              </span>
+          <div className={s.stat}>
+            <div className={`${s.statNum} ${s.statTeal}`}>{activeTags}</div>
+            <div className={s.statLabel}>Active Tags</div>
+          </div>
+          <div className={s.stat}>
+            <div className={s.statNum}>{totalScans}</div>
+            <div className={s.statLabel}>Total Scans</div>
+          </div>
+          <div className={s.stat}>
+            <div className={s.statNum}>{tags.length - activeTags}</div>
+            <div className={s.statLabel}>Inactive</div>
+          </div>
+        </div>
+
+        {/* Two-column layout */}
+        <div className={s.cols}>
+
+          {/* ── Tags panel ──────────────────────── */}
+          <div className={s.panel}>
+            <div className={s.panelHead}>
+              <span className={s.panelTitle}>My Tags</span>
+              <Link href="/register" className={s.addBtn}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                Add tag
+              </Link>
             </div>
 
-            {t.scan_token && (
-              <div className="bg-gray-50 rounded-xl px-3 py-2 mb-3 flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-400 mb-0.5">Scan URL (goes on your sticker)</p>
-                  <p className="font-mono text-xs text-gray-600 truncate">/scan/{t.scan_token}</p>
+            {tagsLoading ? (
+              /* loading */
+              <div style={{ padding: '44px 0', display: 'flex', justifyContent: 'center' }}>
+                <div className={s.spinner} />
+              </div>
+
+            ) : !linkedPhone ? (
+              /* Phone link — first time or no phone yet */
+              <>
+                <div className={s.empty}>
+                  <div className={s.emptyIcon}>📱</div>
+                  <div className={s.emptyTitle}>Link your phone number</div>
+                  <p className={s.emptyText}>
+                    Enter the phone number you used when registering your tags to see them here.
+                  </p>
                 </div>
-                <button
-                  onClick={() => handleCopy(t.id, t.scan_token)}
-                  className="flex-shrink-0 text-xs text-blue-600 font-medium border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors">
-                  {copiedId === t.id ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            )}
+                <div className={s.linkForm}>
+                  <label className={s.linkLabel}>Your WhatsApp / phone number</label>
+                  <div className={s.linkRow}>
+                    <input
+                      type="tel"
+                      className={s.linkInput}
+                      placeholder="+91 98765 43210"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleLinkPhone()}
+                    />
+                    <button
+                      className={s.linkSubmit}
+                      onClick={handleLinkPhone}
+                      disabled={linking || !phone.trim()}
+                    >
+                      {linking ? 'Loading…' : 'Link'}
+                    </button>
+                  </div>
+                </div>
+              </>
 
-            <div className="flex gap-2">
-              <Link href={`/chat/${t.scan_token}`}
-                className="flex-1 text-center text-blue-600 border border-blue-200 py-2 rounded-xl text-sm font-medium hover:bg-blue-50">
-                Open chat
-              </Link>
-              <Link href={`/scan/${t.scan_token}`}
-                className="flex-1 text-center text-gray-600 border border-gray-200 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
-                Preview scan
-              </Link>
+            ) : tags.length === 0 ? (
+              /* Empty — phone linked but no tags */
+              <>
+                <div className={s.empty}>
+                  <div className={s.emptyIcon}>🏷️</div>
+                  <div className={s.emptyTitle}>No tags yet</div>
+                  <p className={s.emptyText}>
+                    Register your first TagGuard tag to start protecting your items.
+                  </p>
+                  <Link href="/register" className={s.addBtn}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    Register a tag
+                  </Link>
+                </div>
+                <div className={s.linkForm}>
+                  <label className={s.linkLabel}>Linked number: {linkedPhone}</label>
+                  <div className={s.linkRow}>
+                    <input
+                      type="tel"
+                      className={s.linkInput}
+                      placeholder="Use a different number"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleLinkPhone()}
+                    />
+                    <button
+                      className={s.linkSubmit}
+                      onClick={handleLinkPhone}
+                      disabled={linking || !phone.trim()}
+                    >
+                      {linking ? '…' : 'Update'}
+                    </button>
+                  </div>
+                </div>
+              </>
+
+            ) : (
+              /* Tag list */
+              <>
+                {tags.map(tag => (
+                  <div key={tag.id} className={s.tagRow}>
+                    <div className={s.tagIcon}>{assetEmoji(tag.asset_type)}</div>
+
+                    <div className={s.tagInfo}>
+                      <div className={s.tagName}>{tag.asset_name}</div>
+                      <div className={s.tagMeta}>
+                        {tag.asset_type}
+                        {tag.owner_name ? ` · ${tag.owner_name}` : ''}
+                      </div>
+                    </div>
+
+                    <span className={`${s.badge} ${tag.active ? s.active : s.inactive}`}>
+                      {tag.active ? 'Active' : 'Inactive'}
+                    </span>
+
+                    <div className={s.scanBox}>
+                      <div className={s.scanNum}>{scanCounts[tag.scan_token] ?? 0}</div>
+                      <div className={s.scanLabel}>scans</div>
+                    </div>
+
+                    <div className={s.actions}>
+                      <button
+                        className={s.actBtn}
+                        title="Copy scan link"
+                        onClick={() => handleCopy(tag.scan_token)}
+                      >
+                        {copiedToken === tag.scan_token ? <CheckIcon /> : <CopyIcon />}
+                      </button>
+                      <Link href={`/chat/${tag.scan_token}`} className={s.actBtn} title="Open chat">
+                        <ChatIcon />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Re-link form */}
+                <div className={s.linkForm}>
+                  <label className={s.linkLabel}>Linked number: {linkedPhone}</label>
+                  <div className={s.linkRow}>
+                    <input
+                      type="tel"
+                      className={s.linkInput}
+                      placeholder="Switch to a different number"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleLinkPhone()}
+                    />
+                    <button
+                      className={s.linkSubmit}
+                      onClick={handleLinkPhone}
+                      disabled={linking || !phone.trim()}
+                    >
+                      {linking ? '…' : 'Switch'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Account panel ───────────────────── */}
+          <div className={s.panel}>
+            <div className={s.panelHead}>
+              <span className={s.panelTitle}>Account</span>
+            </div>
+            <div className={s.accountInner}>
+              {avatarUrl
+                ? <img src={avatarUrl} alt={displayName} className={s.acAvatar} referrerPolicy="no-referrer" />
+                : <div className={s.acAvatarFall}>{userInitials}</div>}
+
+              <div className={s.acName}>{displayName}</div>
+              <div className={s.acEmail}>{user.email}</div>
+
+              <div className={s.providerChip}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.4"/>
+                  <path d="M8 5v4l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+                Signed in with {prov}
+              </div>
+
+              <div className={s.memberSince}>Member since {since}</div>
+
+              <SupportWidget
+                label="Message customer care"
+                variant="inline"
+                context="dashboard"
+                className={s.supportBtnDash}
+              />
+
+              <button className={s.acLogout} onClick={handleLogout}>
+                Sign out
+              </button>
             </div>
           </div>
-        ))}
+
+        </div>
       </div>
-    </main>
+
+      {/* ── Toast ───────────────────────────────── */}
+      {toast && <div className={s.toast}>{toast}</div>}
+    </div>
   )
 }

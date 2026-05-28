@@ -1,0 +1,120 @@
+/* ================================================
+   TagGuard — Admin Login
+   ================================================ */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #02060b, #071a26 55%, #022f38);
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 24px;
+  padding: 36px 32px;
+  backdrop-filter: blur(24px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.brandMark {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #00a9b7, #0d253a);
+  box-shadow: 0 8px 24px rgba(0,169,183,.30);
+  flex-shrink: 0;
+}
+.brandName {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -.04em;
+  color: #fff;
+}
+.adminBadge {
+  background: rgba(239,68,68,.18);
+  border: 1px solid rgba(239,68,68,.30);
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-left: 2px;
+}
+
+.heading { font-size: 22px; font-weight: 800; color: #fff; text-align: center; margin: 0 0 6px; letter-spacing: -.04em; }
+.sub     { font-size: 13px; color: #8fa0b4; text-align: center; margin: 0 0 28px; }
+
+.field { margin-bottom: 14px; }
+.label { display: block; font-size: 12px; font-weight: 700; color: #8fa0b4; margin-bottom: 6px; letter-spacing: .04em; text-transform: uppercase; }
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-size: 15px;
+  color: #fff;
+  background: rgba(255,255,255,.07);
+  outline: none;
+  transition: border-color .15s, background .15s;
+  font-family: inherit;
+}
+.input::placeholder { color: rgba(255,255,255,.28); }
+.input:focus {
+  border-color: rgba(0,169,183,.50);
+  background: rgba(255,255,255,.10);
+  box-shadow: 0 0 0 3px rgba(0,169,183,.12);
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 14px;
+  margin-top: 6px;
+  background: linear-gradient(135deg, #00a9b7, #047b89);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 32px rgba(0,169,183,.28);
+  transition: opacity .15s, transform .15s;
+  font-family: inherit;
+}
+.submitBtn:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+.submitBtn:disabled { opacity: .45; cursor: not-allowed; }
+
+.errBanner {
+  background: rgba(239,68,68,.15);
+  border: 1px solid rgba(239,68,68,.28);
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: #fca5a5;
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.backLink {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+  font-size: 13px;
+  color: rgba(255,255,255,.28);
+  text-decoration: none;
+}
+.backLink:hover { color: rgba(255,255,255,.55); }
