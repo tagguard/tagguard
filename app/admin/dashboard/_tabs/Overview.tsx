@@ -88,7 +88,7 @@ export default function Overview({ supabase }: Props) {
             <span className={s.panelTitle}>Recent Scans</span>
           </div>
           <div className={s.tableWrap}>
-            <table>
+            <table className={s.table}>
               <thead>
                 <tr>
                   <th className={s.th}>Tag / Token</th>

@@ -81,7 +81,7 @@ export default function Users({ supabase }: Props) {
       </div>
 
       <div className={s.tableWrap}>
-        <table>
+        <table className={s.table}>
           <thead>
             <tr>
               <th className={s.th}>Tag ID</th>
