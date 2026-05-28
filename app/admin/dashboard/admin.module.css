@@ -189,7 +189,7 @@
 .emptyTitle { font-size: 16px; font-weight: 700; color: #07111f; margin-bottom: 6px; }
 
 /* ── Loading ─────────────────────────────────── */
-.loadingRow td { padding: 40px; text-align: center; color: #94a3b8; }
+.loadingRow .td { padding: 40px; text-align: center; color: #94a3b8; }
 .spinner {
   width: 32px; height: 32px;
   border: 3px solid rgba(0,169,183,.15);
