@@ -23,9 +23,10 @@
   text-decoration: none;
 }
 .brandMark {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: linear-gradient(135deg, #00a9b7, #0d253a);
+  width: 28px; height: 28px;
   flex-shrink: 0;
+  object-fit: contain;
+  display: block;
 }
 .adminBadge {
   background: rgba(239,68,68,.20);

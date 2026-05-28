@@ -30,10 +30,9 @@
 }
 .brandMark {
   width: 36px; height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #00a9b7, #0d253a);
-  box-shadow: 0 8px 24px rgba(0,169,183,.30);
   flex-shrink: 0;
+  object-fit: contain;
+  display: block;
 }
 .brandName {
   font-size: 20px;

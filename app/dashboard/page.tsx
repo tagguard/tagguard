@@ -193,7 +193,7 @@ export default function Dashboard() {
       {/* ── Topbar ──────────────────────────────── */}
       <header className={s.topbar}>
         <Link href="/" className={s.brand}>
-          <span className={s.brandMark} aria-hidden="true" />
+          <img src="/logo.svg" alt="TagGuard" className={s.brandMark} />
           TagGuard
         </Link>
 

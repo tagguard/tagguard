@@ -12,6 +12,11 @@ export const metadata: Metadata = {
   title: 'TagGuard — Smart QR Asset Tracking',
   description: 'Protect your valuables with smart QR tags',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
 }
 
 export const viewport: Viewport = {

@@ -42,23 +42,9 @@
 
 .brandMark {
   width: 32px; height: 32px;
-  border-radius: 12px;
-  display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--teal), #0d253a);
-  box-shadow: 0 12px 28px rgba(0,169,183,.26);
-  color: white;
-  position: relative;
-  overflow: hidden;
   flex-shrink: 0;
-}
-.brandMark::after {
-  content: "";
-  position: absolute;
-  width: 13px; height: 13px;
-  border: 2px solid white;
-  border-radius: 50%;
-  top: 7px; left: 7px;
-  box-shadow: 8px 8px 0 -5px white;
+  object-fit: contain;
+  display: block;
 }
 
 .navLinks {

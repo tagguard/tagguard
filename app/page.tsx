@@ -167,7 +167,7 @@ export default function Home() {
       {/* ── Nav ──────────────────────────────────── */}
       <nav className={s.nav}>
         <Link href="/" className={s.brand}>
-          <span className={s.brandMark} aria-hidden="true" />
+          <img src="/logo.svg" alt="TagGuard" className={s.brandMark} />
           TagGuard
         </Link>
 

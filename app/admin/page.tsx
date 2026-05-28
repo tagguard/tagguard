@@ -51,7 +51,7 @@ export default function AdminLogin() {
       <div className={s.card}>
 
         <div className={s.brand}>
-          <span className={s.brandMark} />
+          <img src="/logo.svg" alt="TagGuard" className={s.brandMark} />
           <span className={s.brandName}>TagGuard</span>
           <span className={s.adminBadge}>Admin</span>
         </div>

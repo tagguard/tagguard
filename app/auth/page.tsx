@@ -67,7 +67,7 @@ function AuthForm() {
   return (
     <div className={s.page}>
       <Link href="/" className={s.logo}>
-        <span className={s.logoMark} aria-hidden="true" />
+        <img src="/logo.svg" alt="TagGuard" className={s.logoMark} />
         TagGuard
       </Link>
 

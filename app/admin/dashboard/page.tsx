@@ -79,7 +79,7 @@ export default function AdminDashboard() {
       {/* ── Topbar ── */}
       <header className={s.topbar}>
         <Link href="/" className={s.brand}>
-          <span className={s.brandMark} />
+          <img src="/logo.svg" alt="TagGuard" className={s.brandMark} />
           TagGuard
           <span className={s.adminBadge}>Admin</span>
         </Link>

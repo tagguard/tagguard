@@ -30,21 +30,12 @@
 
 .logoMark {
   width: 32px; height: 32px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #00a9b7, #0d253a);
-  box-shadow: 0 8px 24px rgba(0,169,183,.30);
-  position: relative;
-  overflow: hidden;
   flex-shrink: 0;
+  object-fit: contain;
+  display: block;
 }
-.logoMark::after {
-  content: "";
-  position: absolute;
-  width: 13px; height: 13px;
-  border: 2px solid white;
-  border-radius: 50%;
-  top: 7px; left: 7px;
-  box-shadow: 8px 8px 0 -5px white;
+.logoMark_UNUSED {
+  /* kept for reference only */
 }
 
 /* ── Card ──────────────────────────────────────── */
