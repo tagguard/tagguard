@@ -262,6 +262,18 @@ export default function Dashboard() {
                     Enter the phone number you used when registering your tags to see them here.
                   </p>
                 </div>
+                <div style={{
+                  margin: '0 16px 12px',
+                  padding: '10px 14px',
+                  background: 'rgba(217,119,6,.07)',
+                  border: '1px solid rgba(217,119,6,.2)',
+                  borderRadius: 10,
+                  fontSize: 12,
+                  color: '#92400e',
+                  lineHeight: 1.5,
+                }}>
+                  ⚠️ Phone linking is not verified. Only enter a number you own. Full verification (OTP) coming soon.
+                </div>
                 <div className={s.linkForm}>
                   <label className={s.linkLabel}>Your WhatsApp / phone number</label>
                   <div className={s.linkRow}>

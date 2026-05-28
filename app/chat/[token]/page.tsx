@@ -12,9 +12,13 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
   const searchParams = useSearchParams()
   const isCallMode = searchParams.get('mode') === 'call'
 
+  const MAX_MSG_LENGTH = 1000
+
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [sender] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('tg_role') || 'finder') : 'finder')
+  // Role is determined server-side by matching auth session phone to tag's owner_phone
+  // — never trust client-set localStorage values for identity
+  const [sender, setSender] = useState<'finder' | 'owner'>('finder')
   const [tagName, setTagName] = useState('')
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
   const [isMuted, setIsMuted] = useState(false)
@@ -34,10 +38,30 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
     const init = async () => {
       const { data: tag } = await supabase
         .from('tags')
-        .select('asset_name, id')
+        .select('asset_name, id, owner_phone')
         .eq('scan_token', chatId)
         .single()
-      if (tag) setTagName(tag.asset_name)
+      if (tag) {
+        setTagName(tag.asset_name)
+        /* ── Secure role determination ──────────────────────
+           Owner role requires:
+           1. An active Supabase auth session (OAuth login)
+           2. The stored phone number matches the tag's owner_phone
+           This prevents anyone from spoofing 'owner' via localStorage.
+        ─────────────────────────────────────────────────────── */
+        const { data: { session } } = await supabase.auth.getSession()
+        const storedPhone = typeof window !== 'undefined'
+          ? localStorage.getItem('tg_phone')?.trim()
+          : null
+        if (
+          session &&
+          storedPhone &&
+          tag.owner_phone &&
+          storedPhone === tag.owner_phone.trim()
+        ) {
+          setSender('owner')
+        }
+      }
 
       const { data: existing } = await supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at')
       setMessages(existing || [])
@@ -182,7 +206,7 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
 
   const send = async () => {
     if (!input.trim()) return
-    const text = input.trim()
+    const text = input.trim().slice(0, MAX_MSG_LENGTH)   // enforce length cap
     setInput('')
     await supabase.from('messages').insert({ chat_id: chatId, sender, content: text, created_at: new Date().toISOString() })
   }
@@ -287,9 +311,16 @@ export default function ChatPage({ params }: { params: Promise<{ token: string }
       </div>
 
       <div className="bg-white border-t border-gray-100 px-4 py-3 flex gap-2 items-end">
-        <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
-          placeholder="Type a message..." rows={1}
-          className="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-900 bg-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <div className="flex-1 flex flex-col gap-1">
+          <textarea value={input} onChange={e => setInput(e.target.value.slice(0, MAX_MSG_LENGTH))} onKeyDown={handleKey}
+            placeholder="Type a message..." rows={1} maxLength={MAX_MSG_LENGTH}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-900 bg-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          {input.length > MAX_MSG_LENGTH * 0.8 && (
+            <p className="text-xs text-right pr-1" style={{ color: input.length >= MAX_MSG_LENGTH ? '#ef4444' : '#94a3b8' }}>
+              {input.length}/{MAX_MSG_LENGTH}
+            </p>
+          )}
+        </div>
         <button onClick={send} disabled={!input.trim()}
           className="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center disabled:opacity-40 flex-shrink-0">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M16 9L2 2l2.5 7L2 16l14-7z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/></svg>

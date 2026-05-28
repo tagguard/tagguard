@@ -49,11 +49,11 @@ export default function ScanPage({ params }: { params: Promise<{ token: string }
           .select('id')
           .single()
 
-        /* ── Silent geolocation capture ──────────────
-           We fire this in the background immediately.
-           The browser will show its own permission
-           prompt (if not yet granted). If denied or
-           unavailable we simply skip — no UI blocked.
+        /* ── Geolocation capture ─────────────────────
+           Location is shared with the tag owner only,
+           to help recover the lost item. The browser
+           will show its own permission prompt. Denied
+           or unavailable = silently skipped.
         ────────────────────────────────────────────── */
         if (navigator.geolocation && eventRow?.id) {
           navigator.geolocation.getCurrentPosition(
@@ -156,13 +156,18 @@ export default function ScanPage({ params }: { params: Promise<{ token: string }
       </div>
 
       {/* Footer */}
-      <div className="border-t border-gray-100 px-6 py-5 flex items-center justify-between gap-4 bg-white">
-        <p className="text-xs text-gray-300">Powered by TagGuard · tagguard.in</p>
-        <SupportWidget
-          label="Contact support"
-          variant="inline"
-          context="scan_page"
-        />
+      <div className="border-t border-gray-100 px-6 py-5 bg-white space-y-3">
+        <p className="text-xs text-gray-400 text-center">
+          📍 Your approximate location may be shared with the tag owner to help recover this item.
+        </p>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-xs text-gray-300">Powered by TagGuard · tagguard.in</p>
+          <SupportWidget
+            label="Contact support"
+            variant="inline"
+            context="scan_page"
+          />
+        </div>
       </div>
     </main>
   )

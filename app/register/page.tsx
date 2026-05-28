@@ -66,7 +66,8 @@ function RegisterForm() {
         const result = jsQR(img.data, img.width, img.height)
         if (result) {
           const raw = result.data
-          const match = raw.match(/\/scan\/([A-Z0-9]+)$/i)
+          // UUID scan tokens contain hyphens — must include [-] in character class
+          const match = raw.match(/\/scan\/([\w-]+)$/i)
           const tagId = match ? match[1].toUpperCase() : raw.trim().toUpperCase()
           setForm(f => ({ ...f, tag_id: tagId }))
           stopScan()
@@ -112,6 +113,24 @@ function RegisterForm() {
     setLoading(true)
 
     if (tokenFromScan) {
+      /* ── Security: verify tag is NOT already registered ── */
+      const { data: existingCheck } = await supabase
+        .from('tags')
+        .select('id, active, owner_phone')
+        .eq('scan_token', tokenFromScan)
+        .maybeSingle()
+
+      if (!existingCheck) {
+        setLoading(false)
+        alert('Invalid tag. Please contact support.')
+        return
+      }
+      if (existingCheck.active || existingCheck.owner_phone) {
+        setLoading(false)
+        alert('This tag is already registered. Contact support if it belongs to you.')
+        return
+      }
+
       const { error } = await supabase
         .from('tags')
         .update({
@@ -124,16 +143,33 @@ function RegisterForm() {
           active: true
         })
         .eq('scan_token', tokenFromScan)
+        .eq('active', false)   // extra guard: never overwrite an active tag
       setLoading(false)
       if (error) { alert('Error: ' + error.message); return }
       setRegisteredTagId(form.tag_id.toUpperCase().trim())
       setRegisteredScanToken(tokenFromScan)
       setDone(true)
     } else {
-      const scanToken = crypto.randomUUID()
-      const { error } = await supabase.from('tags').upsert({
-        id: form.tag_id.toUpperCase().trim(),
-        scan_token: scanToken,
+      /* ── Security: look up tag in admin inventory first ── */
+      const { data: inventoryTag } = await supabase
+        .from('tags')
+        .select('id, scan_token, active, owner_phone')
+        .eq('id', form.tag_id.toUpperCase().trim())
+        .maybeSingle()
+
+      if (!inventoryTag) {
+        setLoading(false)
+        alert('Tag ID not found in our system. Please check the ID printed on your sticker and try again.')
+        return
+      }
+      if (inventoryTag.active || inventoryTag.owner_phone) {
+        setLoading(false)
+        alert('This tag is already registered. Contact support if it belongs to you.')
+        return
+      }
+
+      /* Use the existing scan_token created by admin — never create a new one */
+      const { error } = await supabase.from('tags').update({
         asset_name: form.asset_name,
         asset_type: form.asset_type,
         message_to_finder: form.message_to_finder,
@@ -141,12 +177,12 @@ function RegisterForm() {
         owner_phone: form.owner_phone,
         privacy: form.privacy,
         active: true,
-        created_at: new Date().toISOString()
-      })
+      }).eq('id', inventoryTag.id).eq('active', false)  // extra guard
+
       setLoading(false)
       if (error) { alert('Error: ' + error.message); return }
-      setRegisteredTagId(form.tag_id.toUpperCase().trim())
-      setRegisteredScanToken(scanToken)
+      setRegisteredTagId(inventoryTag.id)
+      setRegisteredScanToken(inventoryTag.scan_token)
       setDone(true)
     }
   }
