@@ -168,6 +168,11 @@ export default function Inventory({ supabase }: Props) {
       created_at:      new Date().toISOString(),
       allocation:      allocation,
       allocation_name: allocation !== 'unallocated' ? (allocName.trim() || null) : null,
+      /* required DB fields — will be filled when user registers the tag */
+      asset_name:      'Unregistered',
+      asset_type:      'Other',
+      owner_name:      null,
+      owner_phone:     null,
     }))
 
     const { error } = await supabase.from('tags').insert(rows)
