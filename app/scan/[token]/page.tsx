@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, use } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import SupportWidget from '@/app/components/SupportWidget'
+import PWAInstallBanner from '@/app/components/PWAInstallBanner'
 
 type Tag = {
   id: string
@@ -104,6 +105,9 @@ export default function ScanPage({ params }: { params: Promise<{ token: string }
   /* ── Found ────────────────────────────────────── */
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col">
+
+      {/* PWA install prompt — shown to finders so they can install the app */}
+      <PWAInstallBanner />
 
       {/* Topbar */}
       <div className="bg-white border-b border-gray-100 px-6 py-4 text-center">
