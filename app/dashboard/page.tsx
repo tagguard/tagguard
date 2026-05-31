@@ -20,6 +20,15 @@ type Tag = {
   owner_phone: string
 }
 
+type ChatPreview = {
+  scan_token: string
+  asset_name: string
+  lastMessage: string
+  lastSender: string
+  lastTime: string
+  unread: number
+}
+
 /* ── Helpers ───────────────────────────────────── */
 const ASSET_EMOJI: Record<string, string> = {
   Bag: '🎒', Wallet: '👛', Keys: '🔑', Passport: '🛂',
@@ -85,6 +94,8 @@ export default function Dashboard() {
   const [tags,        setTags]        = useState<Tag[]>([])
   const [scanCounts,  setScanCounts]  = useState<Record<string, number>>({})
   const [tagsLoading, setTagsLoading] = useState(false)
+  const [chats,       setChats]       = useState<ChatPreview[]>([])
+  const [chatsLoading, setChatsLoading] = useState(false)
 
   const [phone,       setPhone]       = useState('')
   const [linkedPhone, setLinkedPhone] = useState<string | null>(null)
@@ -118,9 +129,52 @@ export default function Dashboard() {
         counts[e.scan_token] = (counts[e.scan_token] ?? 0) + 1
       })
       setScanCounts(counts)
+
+      /* load chat previews */
+      loadChats(rows)
     }
 
     setTagsLoading(false)
+  }
+
+  /* ── Load recent chats ───────────────────────── */
+  const loadChats = async (tagList: Tag[]) => {
+    if (tagList.length === 0) return
+    setChatsLoading(true)
+    const tokens = tagList.map(t => t.scan_token).filter(Boolean)
+
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('scan_token, sender, content, created_at')
+      .in('scan_token', tokens)
+      .order('created_at', { ascending: false })
+
+    /* group by scan_token, keep latest */
+    const map: Record<string, ChatPreview> = {}
+    msgs?.forEach(m => {
+      if (!map[m.scan_token]) {
+        const tag = tagList.find(t => t.scan_token === m.scan_token)
+        map[m.scan_token] = {
+          scan_token:  m.scan_token,
+          asset_name:  tag?.asset_name ?? 'Item',
+          lastMessage: m.content,
+          lastSender:  m.sender,
+          lastTime:    m.created_at,
+          unread:      0,
+        }
+      }
+    })
+    /* count finder messages (unread) */
+    msgs?.forEach(m => {
+      if (m.sender === 'finder' && map[m.scan_token]) {
+        map[m.scan_token].unread++
+      }
+    })
+
+    setChats(Object.values(map).sort((a, b) =>
+      new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime()
+    ))
+    setChatsLoading(false)
   }
 
   /* ── Auth check on mount ─────────────────────── */
@@ -230,6 +284,91 @@ export default function Dashboard() {
             <div className={s.statLabel}>Inactive</div>
           </div>
         </div>
+
+        {/* ── Recent Chats ──────────────────────── */}
+        {(chats.length > 0 || chatsLoading) && (
+          <div className={s.panel} style={{ marginBottom: 24 }}>
+            <div className={s.panelHead}>
+              <span className={s.panelTitle}>Recent Finder Chats</span>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                Messages from people who found your items
+              </span>
+            </div>
+
+            {chatsLoading ? (
+              <div style={{ padding: '24px', display: 'flex', justifyContent: 'center' }}>
+                <div className={s.spinner} />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {chats.map(chat => (
+                  <Link
+                    key={chat.scan_token}
+                    href={`/chat/${chat.scan_token}`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                  >
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      padding: '14px 20px', borderBottom: '1px solid #f1f5f9',
+                      transition: 'background .15s',
+                      cursor: 'pointer',
+                    }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '')}
+                    >
+                      {/* Avatar */}
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%',
+                        background: chat.lastSender === 'finder' ? '#185FA5' : '#e2e8f0',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 18, flexShrink: 0,
+                      }}>
+                        {assetEmoji(tags.find(t => t.scan_token === chat.scan_token)?.asset_type ?? '')}
+                      </div>
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, fontSize: 14, color: '#07111f' }}>
+                            {chat.asset_name}
+                          </span>
+                          <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0, marginLeft: 8 }}>
+                            {new Date(chat.lastTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div style={{
+                          fontSize: 13, color: '#64748b',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          marginTop: 2,
+                        }}>
+                          <span style={{ color: '#94a3b8', fontSize: 11 }}>
+                            {chat.lastSender === 'finder' ? '🔍 Finder: ' : '👤 You: '}
+                          </span>
+                          {chat.lastMessage}
+                        </div>
+                      </div>
+
+                      {/* Unread badge */}
+                      {chat.unread > 0 && (
+                        <div style={{
+                          background: '#185FA5', color: '#fff', borderRadius: 99,
+                          fontSize: 11, fontWeight: 700, padding: '2px 8px', flexShrink: 0,
+                        }}>
+                          {chat.unread}
+                        </div>
+                      )}
+
+                      {/* Arrow */}
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: '#94a3b8' }}>
+                        <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Two-column layout */}
         <div className={s.cols}>
