@@ -24,70 +24,98 @@ function buildIds(qty: number, start: number): string[] {
 function printQRCodes(tags: InventoryTag[], origin: string) {
   const html = `<!DOCTYPE html><html><head><title>TagGuard QR Codes</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Arial', sans-serif; background: #fff; }
+  body { font-family: 'Montserrat', 'Arial Black', sans-serif; background: #1a1a1a; padding: 20px; }
   .grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    padding: 20px;
+    gap: 20px;
   }
   .card {
     background: #000;
-    border-radius: 12px;
-    padding: 14px 10px 12px;
+    border-radius: 16px;
+    padding: 18px 14px 16px;
     text-align: center;
     page-break-inside: avoid;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    border: 1.5px solid #2a2a2a;
   }
   .brand {
     color: #FFD700;
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 900;
-    letter-spacing: 2px;
+    letter-spacing: 3px;
     text-transform: uppercase;
+    font-family: 'Montserrat', 'Arial Black', sans-serif;
+  }
+  .brand span {
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 1px;
+    opacity: 0.5;
+    font-size: 8px;
+    display: block;
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 4px;
   }
   .qr-wrap {
     background: #000;
-    padding: 6px;
-    border-radius: 6px;
+    padding: 4px;
+    border-radius: 10px;
+    line-height: 0;
   }
   .qr-wrap img {
-    width: 130px;
-    height: 130px;
+    width: 170px;
+    height: 170px;
     display: block;
-    /* yellow-tinted QR via CSS filter */
-    filter: invert(1) sepia(1) saturate(5) hue-rotate(5deg) brightness(1.1);
+    border-radius: 6px;
   }
   .tagline {
     color: #FFD700;
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 700;
-    letter-spacing: 0.5px;
-    line-height: 1.3;
+    letter-spacing: 1px;
+    line-height: 1.5;
     text-transform: uppercase;
+    font-family: 'Montserrat', 'Arial Black', sans-serif;
+  }
+  .divider {
+    width: 40px;
+    height: 1.5px;
+    background: #FFD700;
+    border-radius: 2px;
+    opacity: 0.5;
   }
   @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .grid { padding: 10px; gap: 10px; }
+    body {
+      background: #000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      padding: 10px;
+    }
+    .grid { gap: 12px; }
   }
 </style></head><body>
 <div class="grid">
 ${tags.map(t => {
   const url = `${origin}/scan/${t.scan_token}`
-  const qr  = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&bgcolor=000000&color=FFD700&qzone=1&data=${encodeURIComponent(url)}`
+  /* Use qrserver with black bg + yellow QR modules, high error correction for clarity */
+  const qr  = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&bgcolor=000000&color=FFD700&qzone=2&ecc=H&data=${encodeURIComponent(url)}`
   return `<div class="card">
-  <div class="brand">TagGuard</div>
-  <div class="qr-wrap"><img src="${qr}" alt="QR" /></div>
+  <div class="brand">TagGuard<span>protect · track · recover</span></div>
+  <div class="divider"></div>
+  <div class="qr-wrap"><img src="${qr}" alt="QR Code" /></div>
+  <div class="divider"></div>
   <div class="tagline">Scan me to return me<br/>to my Owner</div>
 </div>`
 }).join('\n')}
 </div>
 <script>
-  // Wait for all QR images to load before printing
   window.onload = () => {
     const imgs = document.querySelectorAll('img')
     let loaded = 0
@@ -97,8 +125,7 @@ ${tags.map(t => {
       if (img.complete) { loaded++; if (loaded === total) window.print() }
       else { img.onload = () => { loaded++; if (loaded === total) window.print() } }
     })
-    // Fallback
-    setTimeout(() => window.print(), 4000)
+    setTimeout(() => window.print(), 5000)
   }
 </script>
 </body></html>`
