@@ -22,112 +22,127 @@ function buildIds(qty: number, start: number): string[] {
 }
 
 function printQRCodes(tags: InventoryTag[], origin: string) {
+  const tagData = tags.map(t => ({
+    token: t.scan_token,
+    url: `${origin}/scan/${t.scan_token}`,
+  }))
+
   const html = `<!DOCTYPE html><html><head><title>TagGuard QR Codes</title>
+<script src="https://unpkg.com/qr-code-styling@1.6.0-rc.1/lib/qr-code-styling.js"><\/script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;900&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Montserrat', 'Arial Black', sans-serif; background: #1a1a1a; padding: 20px; }
+  body {
+    font-family: 'Montserrat', 'Arial Black', sans-serif;
+    background: #111;
+    padding: 20px;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
+    gap: 18px;
   }
   .card {
     background: #000;
     border-radius: 16px;
-    padding: 18px 14px 16px;
+    padding: 16px 12px 14px;
     text-align: center;
     page-break-inside: avoid;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    border: 1.5px solid #2a2a2a;
+    gap: 8px;
+    border: 1px solid #1f1f1f;
   }
   .brand {
     color: #FFD700;
-    font-size: 17px;
+    font-size: 16px;
     font-weight: 900;
     letter-spacing: 3px;
     text-transform: uppercase;
-    font-family: 'Montserrat', 'Arial Black', sans-serif;
   }
-  .brand span {
-    color: #fff;
-    font-weight: 700;
-    letter-spacing: 1px;
-    opacity: 0.5;
-    font-size: 8px;
-    display: block;
-    margin-top: 2px;
+  .sub {
+    color: rgba(255,215,0,0.45);
+    font-size: 7px;
+    font-weight: 600;
+    letter-spacing: 3.5px;
     text-transform: uppercase;
-    letter-spacing: 4px;
+    margin-top: -4px;
   }
-  .qr-wrap {
-    background: #000;
-    padding: 4px;
-    border-radius: 10px;
-    line-height: 0;
+  .qr-slot {
+    width: 180px;
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  .qr-wrap img {
-    width: 170px;
-    height: 170px;
-    display: block;
-    border-radius: 6px;
+  .divider {
+    width: 36px;
+    height: 1px;
+    background: rgba(255,215,0,0.35);
+    border-radius: 2px;
   }
   .tagline {
     color: #FFD700;
-    font-size: 8.5px;
+    font-size: 8px;
     font-weight: 700;
-    letter-spacing: 1px;
-    line-height: 1.5;
+    letter-spacing: 1.2px;
+    line-height: 1.6;
     text-transform: uppercase;
-    font-family: 'Montserrat', 'Arial Black', sans-serif;
-  }
-  .divider {
-    width: 40px;
-    height: 1.5px;
-    background: #FFD700;
-    border-radius: 2px;
-    opacity: 0.5;
   }
   @media print {
-    body {
-      background: #000;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      padding: 10px;
-    }
-    .grid { gap: 12px; }
+    body { background: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 10px; }
+    .grid { gap: 10px; }
   }
-</style></head><body>
-<div class="grid">
-${tags.map(t => {
-  const url = `${origin}/scan/${t.scan_token}`
-  /* Use qrserver with black bg + yellow QR modules, high error correction for clarity */
-  const qr  = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&bgcolor=000000&color=FFD700&qzone=2&ecc=H&data=${encodeURIComponent(url)}`
-  return `<div class="card">
-  <div class="brand">TagGuard<span>protect · track · recover</span></div>
-  <div class="divider"></div>
-  <div class="qr-wrap"><img src="${qr}" alt="QR Code" /></div>
-  <div class="divider"></div>
-  <div class="tagline">Scan me to return me<br/>to my Owner</div>
-</div>`
-}).join('\n')}
+</style>
+</head><body>
+<div class="grid" id="grid">
+${tagData.map((_t, i) => `
+  <div class="card" id="card-${i}">
+    <div class="brand">TagGuard</div>
+    <div class="sub">protect · track · recover</div>
+    <div class="divider"></div>
+    <div class="qr-slot" id="qr-${i}"></div>
+    <div class="divider"></div>
+    <div class="tagline">Scan me to return me<br/>to my Owner</div>
+  </div>`).join('')}
 </div>
 <script>
-  window.onload = () => {
-    const imgs = document.querySelectorAll('img')
-    let loaded = 0
-    const total = imgs.length
-    if (total === 0) { window.print(); return }
-    imgs.forEach(img => {
-      if (img.complete) { loaded++; if (loaded === total) window.print() }
-      else { img.onload = () => { loaded++; if (loaded === total) window.print() } }
-    })
-    setTimeout(() => window.print(), 5000)
+const tags = ${JSON.stringify(tagData)};
+let rendered = 0;
+
+tags.forEach((t, i) => {
+  const qr = new QRCodeStyling({
+    width: 180,
+    height: 180,
+    data: t.url,
+    margin: 4,
+    qrOptions: { errorCorrectionLevel: 'H' },
+    backgroundOptions: { color: '#000000' },
+    dotsOptions: {
+      type: 'rounded',
+      color: '#FFD700',
+    },
+    cornersSquareOptions: {
+      type: 'extra-rounded',
+      color: '#FFD700',
+    },
+    cornersDotOptions: {
+      type: 'dot',
+      color: '#FFD700',
+    },
+    imageOptions: { hideBackgroundDots: true, imageSize: 0.3, margin: 4 },
+  });
+
+  const slot = document.getElementById('qr-' + i);
+  qr.append(slot);
+  rendered++;
+  if (rendered === tags.length) {
+    // Small delay to let canvas render
+    setTimeout(() => window.print(), 1200);
   }
-</script>
+});
+<\/script>
 </body></html>`
 
   const win = window.open('', '_blank')
